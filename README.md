@@ -18,12 +18,12 @@ mvn clean package -DskipTests
 
 ### 2. Configure
 
-Set environment variables for your Redis cluster:
+Set environment variables for Redis cluster:
 
 ```bash
-export REDIS_HOST=your-redis-host
+export REDIS_HOST=redis-host
 export REDIS_PORT=6379
-export REDIS_PASSWORD=your-password  # If required
+export REDIS_PASSWORD=password  # If required
 ```
 
 ### 3. Run
@@ -37,8 +37,7 @@ java -jar target/redisson-test-0.0.1-SNAPSHOT.jar
 ### Automated (Recommended)
 
 ```bash
-# Set your Redis password
-export REDIS_PASSWORD=your-password
+export REDIS_PASSWORD=password
 
 # Run the reproduction script
 ./scripts/reproduce-bug.sh
@@ -134,7 +133,7 @@ Under high load with connection churn, a `PING` response can be incorrectly matc
 
 ### The Domino Effect
 
-The bug just stops topology refresh. Your app keeps running with stale data. But if Redis fails over while refresh is dead, you're toast.
+The bug just stops topology refresh. My app keeps running with stale data. But if Redis fails over while refresh is dead -> BROKEN!!!
 
 ```
     +------------------+      +------------------+      +------------------+
@@ -201,14 +200,14 @@ The bug just stops topology refresh. Your app keeps running with stale data. But
 
     1. MOVED redirects contain Cluster IPs (Redis doesn't know about NodePort)
     2. Normally scanInterval refreshes topology with correct NodePort IPs
-    3. But if scanInterval is dead, you're stuck with unreachable IPs
+    3. But if scanInterval is dead, always stuck with unreachable IPs
     4. Forever
 ```
 
-## Why We Built This
+## Why I Built This
 
-We hit this in production. Payment processing went down, service degraded. Took us months to figure out why the app would randomly die after Redis failovers.
+I hit this in production. Payment processing went down, service degraded. Took me months to figure out why the app would randomly die after Redis failovers.
 
-Turns out it wasn't random - the bug had already killed scanInterval hours earlier, we just didn't know until the failover exposed it.
+Turns out it wasn't random - the bug had already killed scanInterval hours earlier, I just didn't know until the failover exposed it.
 
-This reproduction kit helps you trigger the bug reliably so you can see it happen, understand it, and verify the fix works.
+This reproduction kit helps trigger the bug reliably so can see it happen, understand it, and verify the fix works.
