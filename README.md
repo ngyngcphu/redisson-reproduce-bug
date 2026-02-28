@@ -29,7 +29,7 @@ export REDIS_PASSWORD=password  # If required
 ### 3. Run
 
 ```bash
-java -jar target/redisson-test-0.0.1-SNAPSHOT.jar
+mvn spring-boot:run 2>&1 | tee app.log
 ```
 
 ## How to Reproduce the Bug
