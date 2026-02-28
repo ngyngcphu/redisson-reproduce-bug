@@ -1,0 +1,26 @@
+# Build
+target/
+*.jar
+*.war
+*.ear
+
+# IDE
+.classpath
+.project
+.settings/
+.idea/
+*.iml
+.vscode/
+
+# Logs
+nohup.out
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Temp
+*.tmp
+*.swp
+*.swo
+*~
