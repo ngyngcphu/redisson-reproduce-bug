@@ -1,0 +1,3 @@
+[submodule "redisson-4.2.0-observability"]
+	path = redisson-4.2.0-observability
+	url = https://github.com/ngyngcphu/redisson-4.2.0-observability.git

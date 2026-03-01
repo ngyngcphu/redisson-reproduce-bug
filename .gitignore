@@ -1,6 +1,5 @@
 # Build
 target/
-*.jar
 *.war
 *.ear
 

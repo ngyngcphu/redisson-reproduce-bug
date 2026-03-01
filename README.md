@@ -8,11 +8,36 @@
 - Maven
 - Redis Cluster (6 nodes: 3 masters, 3 replicas)
 
+## Project Structure
+
+```
+redisson-test/
+├── redisson-4.2.0-observability/    # Modified Redisson with observability logging
+│   └── redisson/
+│       └── src/...
+├── scripts/
+│   └── reproduce-bug.sh             # Automated reproduction script
+├── src/                             # Test application
+└── pom.xml
+```
+
 ## How to Run
 
-### 1. Build
+### 1. Build the Observability-Instrumented Redisson
+
+First, build and install the modified Redisson with observability logging:
 
 ```bash
+cd redisson-4.2.0-observability/redisson
+mvn clean install -DskipTests -Dcheckstyle.skip=true
+```
+
+This installs `redisson-4.2.0-observability.jar` to your local Maven repository. The source code includes detailed observability logging to trace the bug.
+
+### 2. Build the Test Application
+
+```bash
+cd ../..  # Back to redisson-test root
 mvn clean package -DskipTests
 ```
 
