@@ -12,7 +12,7 @@
 
 ```
 redisson-test/
-├── redisson-4.2.0-observability/    # Modified Redisson with observability logging
+├── redisson-4.2.0-observability/    # Git submodule - Modified Redisson with observability logging
 │   └── redisson/
 │       └── src/...
 ├── scripts/
@@ -23,25 +23,39 @@ redisson-test/
 
 ## How to Run
 
-### 1. Build the Observability-Instrumented Redisson
+### 1. Clone with Submodules
 
-First, build and install the modified Redisson with observability logging:
+This project uses a git submodule for the observability-instrumented Redisson:
+
+```bash
+git clone --recursive git@github.com:ngyngcphu/redisson-reproduce-bug.git
+```
+
+Or if already cloned without submodules:
+
+```bash
+git submodule update --init --recursive
+```
+
+### 2. Build the Observability-Instrumented Redisson
+
+Build and install the modified Redisson with observability logging:
 
 ```bash
 cd redisson-4.2.0-observability/redisson
 mvn clean install -DskipTests -Dcheckstyle.skip=true
 ```
 
-This installs `redisson-4.2.0-observability.jar` to your local Maven repository. The source code includes detailed observability logging to trace the bug.
+This installs `redisson-4.2.0-observability.jar` to local Maven repository. The source code includes detailed observability logging to trace the bug.
 
-### 2. Build the Test Application
+### 3. Build the Test Application
 
 ```bash
 cd ../..  # Back to redisson-test root
 mvn clean package -DskipTests
 ```
 
-### 2. Configure
+### 4. Configure
 
 Set environment variables for Redis cluster:
 
@@ -51,7 +65,7 @@ export REDIS_PORT=6379
 export REDIS_PASSWORD=password  # If required
 ```
 
-### 3. Run
+### 5. Run
 
 ```bash
 mvn spring-boot:run 2>&1 | tee app.log
