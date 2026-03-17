@@ -2,9 +2,16 @@
 set -euo pipefail
 
 BASE_URL="${BASE_URL:-http://localhost:8000}"
-NS="${NS:-redis-cluster-dev}"
+REDIS_HOST="${REDIS_HOST:-}"
+REDIS_PORT="${REDIS_PORT:-}"
 REDIS_PASSWORD="${REDIS_PASSWORD:-}"
-APP_LOG="${APP_LOG:-}"
+APP_LOG="${APP_LOG:-./app.log}"
+
+if [ -n "$REDIS_PASSWORD" ]; then
+    REDIS_AUTH="-a $REDIS_PASSWORD"
+else
+    REDIS_AUTH=""
+fi
 
 # Thread Configuration
 MAX_THREADS=1024        # Maximum JVM threads - saturates Redis event loop
@@ -25,12 +32,15 @@ echo "                    REDISSON BUG REPRODUCTION"
 echo "======================================================================"
 echo ""
 echo "Configuration:"
+echo "  Redis:          $REDIS_HOST:$REDIS_PORT"
 echo "  Threads:        $MAX_THREADS (maximize connection count)"
 echo "  Key Pool:       $KEY_POOL (all keys hit same slot)"
 echo "  Sleep:          ${SLEEP_MS}ms (no throttling)"
 echo "  Hash Tag:       $HASH_TAG (slot pinning)"
 echo "  Client Pause:   ${CLIENT_PAUSE_MS}ms (extended pause)"
 echo "  Chaos Rounds:   $CHAOS_ROUNDS (more attempts)"
+echo ""
+echo "Usage: REDIS_HOST=localhost REDIS_PORT=6379 REDIS_PASSWORD=mypass ./reproduce-bug.sh"
 echo ""
 
 for run in {1..20}; do
@@ -40,10 +50,8 @@ for run in {1..20}; do
     echo "======================================================================"
     echo ""
 
-    # Clear log
     > "$APP_LOG" 2>/dev/null || true
 
-    # Get baseline
     BASELINE_SCAN=$(grep -c -i "cluster nodes state got" "$APP_LOG" 2>/dev/null | head -1 || echo "0")
     BASELINE_SCAN=$(echo "$BASELINE_SCAN" | tr -d '\n' | tr -d ' ')
     echo "Baseline scanInterval count: $BASELINE_SCAN"
@@ -58,24 +66,50 @@ for run in {1..20}; do
     echo "Step 2: Run $CHAOS_ROUNDS rounds of chaos..."
     echo ""
 
+    # Pre-fetch cluster topology once (before chaos starts)
+    # This avoids issues where CLIENT PAUSE blocks subsequent CLUSTER NODES calls
+    echo "  [Pre-fetching cluster topology...]"
+    CLUSTER_TOPOLOGY=$(redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" $REDIS_AUTH CLUSTER NODES 2>/dev/null || true)
+
+    # Build node address list and find a slave for failover
+    NODE_ADDRS=()
+    FAILOVER_SLAVE=""
+    while IFS= read -r line; do
+        [ -z "$line" ] && continue
+        addr=$(echo "$line" | awk '{print $2}')
+        flags=$(echo "$line" | awk '{print $3}')
+        [ -n "$addr" ] && NODE_ADDRS+=("$addr")
+        # Find first slave for failover
+        if [ -z "$FAILOVER_SLAVE" ] && echo "$flags" | grep -q "slave"; then
+            FAILOVER_SLAVE="$addr"
+        fi
+    done <<< "$CLUSTER_TOPOLOGY"
+
+    echo "  [Found ${#NODE_ADDRS[@]} nodes, failover slave: $FAILOVER_SLAVE]"
+    echo ""
+
     for i in $(seq 1 $CHAOS_ROUNDS); do
-        if [ $i -eq $FAILOVER_ROUND ]; then
+        if [ $i -eq $FAILOVER_ROUND ] && [ -n "$FAILOVER_SLAVE" ]; then
             echo "  Round $i/$CHAOS_ROUNDS - [$(date '+%H:%M:%S')] >>> TRIGGERING FAILOVER <<<"
-            MASTER_POD=$(kubectl get pods -n "$NS" -o name 2>/dev/null | grep "drc-redis-guard-v2-normal" | head -1 | cut -d/ -f2)
-            CLUSTER_NODES=$(kubectl exec "$MASTER_POD" -n "$NS" -c redis -- redis-cli -a "$REDIS_PASSWORD" CLUSTER NODES 2>/dev/null)
-            SLAVE_IP=$(echo "$CLUSTER_NODES" | grep "slave" | awk '{print $2}' | cut -d: -f1 | head -1)
-            SLAVE_POD=$(kubectl get pods -n "$NS" -o wide 2>/dev/null | grep "$SLAVE_IP" | grep "guard-v2-normal" | awk '{print $1}')
-            kubectl exec "$SLAVE_POD" -n "$NS" -c redis -- redis-cli -a "$REDIS_PASSWORD" CLUSTER FAILOVER 2>/dev/null > /dev/null || true
+            SLAVE_HOST=$(echo "$FAILOVER_SLAVE" | cut -d: -f1)
+            SLAVE_PORT=$(echo "$FAILOVER_SLAVE" | cut -d: -f2 | cut -d@ -f1)
+            echo "        Triggering failover on slave: $SLAVE_HOST:$SLAVE_PORT"
+            (redis-cli -h "$SLAVE_HOST" -p "$SLAVE_PORT" $REDIS_AUTH CLUSTER FAILOVER 2>/dev/null > /dev/null &) || true
+            echo "        Failover command sent (async)"
         else
             echo "  Round $i/$CHAOS_ROUNDS"
         fi
 
-        # Apply CLIENT PAUSE to ALL Redis nodes
-        for pod in $(kubectl get pods -n "$NS" -o name 2>/dev/null | grep guard-v2-normal); do
-            pod_name=$(echo "$pod" | cut -d/ -f2)
-            kubectl exec "$pod_name" -n "$NS" -c redis -- redis-cli -a "$REDIS_PASSWORD" CLIENT PAUSE $CLIENT_PAUSE_MS 2>/dev/null > /dev/null &
+        # Apply CLIENT PAUSE to ALL Redis nodes - parallel execution within round
+        # Launch all in background, then wait for them to complete
+        for addr in "${NODE_ADDRS[@]}"; do
+            node_host=$(echo "$addr" | cut -d: -f1)
+            node_port=$(echo "$addr" | cut -d: -f2 | cut -d@ -f1)
+            redis-cli -h "$node_host" -p "$node_port" $REDIS_AUTH CLIENT PAUSE $CLIENT_PAUSE_MS 2>/dev/null > /dev/null &
         done
-        wait 2>/dev/null || true
+        # Wait for ALL CLIENT PAUSE commands to complete 
+        wait
+        echo "        CLIENT PAUSE completed on ${#NODE_ADDRS[@]} nodes"
     done
 
     echo ""
